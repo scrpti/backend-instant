@@ -7,24 +7,38 @@ from bson import json_util
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from flask import Blueprint, current_app, jsonify, request
+from datetime import datetime
 
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
 usuarios_bp = Blueprint("usuarios_bp", __name__)
+mensajes_bp = Blueprint("mensajes_bp", __name__)
 
 client = pymongo.MongoClient(DB_URL)
 db = client.instant
 usuarios = db.usuarios
 contactos = db.contactos
+mensajes = db.mensajes
 
 
 #GET /usuarios/
 
 @usuarios_bp.route("/", methods = ['GET'])
 def get_usuarios():
+    try:
+        alias = request.args.get("alias")
+        query = {}
+    except Exception as e:
+        return jsonify({"error": "Error al leer parámetros de consulta"}), 400
+    
+    try:
+        if alias:
+            query["nombre"] = {"$regex": alias, "$options": "i"}
+    except Exception as e:
+        return jsonify({"error": f"Error al convertir los ID: {str(e)}"}), 400
     try: 
         print("GET ALL USUARIOS")
-        resultado = usuarios.find()
+        resultado = usuarios.find(query)
     except Exception as e:
         return jsonify({"error": "Error al consultar la base de datos"}), 404
     try:
@@ -46,8 +60,8 @@ def get_usuarios_by_id(id):
         resultado_json = json.loads(json_util.dumps(resultado))
         return jsonify(resultado_json)
     else:
-        print(f"Error al obtener la wiki con id {id}")
-        return jsonify({"error":"Wiki con id especificado no encontrada"}), 404
+        print(f"Error al obtener el mensaje con id {id}")
+        return jsonify({"error":"Mensaje con id especificado no encontrada"}), 404
 
 #POST /usuarios/
 
@@ -76,11 +90,11 @@ def update_usuario(id):
     dataFormateada = {"$set":data}
     respuesta = usuarios.find_one_and_update({"_id":ObjectId(id)}, dataFormateada, return_document=True)
     print(respuesta)
-    alias = respuesta["alias"]
 
     if respuesta is None:
         return jsonify({"error":f"Error al actualizar el usuario con id {id}"}), 404
     else:
+        alias = respuesta["alias"]
         return jsonify({"response":f"Usuario con alias {alias} actualizado correctamente"}), 200
 
 #DELETE /usuarios/<id>
@@ -134,8 +148,8 @@ def get_contactos_by_id(id, idContacto):
         resultado_json = json.loads(json_util.dumps(listaDeContactos))
         return jsonify(resultado_json)
     else:
-        print(f"Error al obtener la wiki con id {id}")
-        return jsonify({"error":"Wiki con id especificado no encontrada"}), 404
+        print(f"Error al obtener el contacto con id {id}")
+        return jsonify({"error":"Contacto con id especificado no encontrada"}), 404
 
 #POST /usuarios/
 
@@ -162,7 +176,7 @@ def create_contacto(id):
     return jsonify({"response":"Contacto insertado correctamente"}), 200
 
 
-#PUT /wikis/<id>
+#PUT /usuarios/<id>
 
 @usuarios_bp.route("/<id>/contactos/<idContacto>", methods=["PUT"])
 def update_contacto(id,idContacto):
@@ -194,6 +208,116 @@ def delete_contacto(id, idContacto):
         return f"El contacto {idContacto} no existe, por lo tanto no se puede borrar", 200
 
     return "El contacto ha sido borrado con exito", 200
+
+#GET /usuarios/<alias>/contactos
+@usuarios_bp.route("/contactos/<alias>", methods=['GET'])
+def get_contactos_by_alias(alias):
+    try:
+        print(f"GET CONTACTOS FROM {alias}")
+        listaDeContactos = contactos.find({"aliasLista":str(alias)})
+    except Exception as e:
+        return jsonify({"error": "ID invalido"}), 400
+    if listaDeContactos:
+        print("Busqueda contactos por alias")
+
+        resultado_json = json.loads(json_util.dumps(listaDeContactos))
+        return jsonify(resultado_json)
+    else:
+        print(f"Error al obtener el contacto con alias {alias}")
+        return jsonify({"error":"Contacto con id especificado no encontrada"}), 404
+
+
+
+#CRUD DE LOS MENSAJES
+
+#GET /mensaje
+
+@mensajes_bp.route("/", methods = ['GET'])
+def get_mensajes():
+    try: 
+        print("GET ALL MENSAJES")
+        resultado = mensajes.find()
+    except Exception as e:
+        return jsonify({"error": "Error al consultar la base de datos"}), 404
+    try:
+        resultado_json = json.loads(json_util.dumps(resultado))
+        return jsonify(resultado_json)
+    except Exception as e:
+        return jsonify({"error": "Error al procesar resultados"}), 400
+
+#GET /mensaje/<id>
+
+@mensajes_bp.route("/<id>", methods = ["GET"])
+def get_mensajes_by_id(id):
+    try:
+        resultado = mensajes.find_one({"_id":ObjectId(id)})
+    except Exception as e:
+        return jsonify({"error": "ID invalido"}), 400
+    if resultado:
+        print("Busqueda de mensaje por id")
+        resultado_json = json.loads(json_util.dumps(resultado))
+        return jsonify(resultado_json)
+    else:
+        print(f"Error al obtener el mensaje con id {id}")
+        return jsonify({"error":"Mensaje con id especificado no encontrada"}), 404
+
+#POST /mensaje/
+
+@mensajes_bp.route("/", methods = ['POST'])
+def create_mensaje():
+    datos = request.json
+
+    if not datos or not datos["identificador"] or not datos["origen"] or not datos["destino"] or not datos["texto"]:
+        print("Error: Parametros de entrada inválidos")
+
+    datos["timestamp"] = datetime.now()
+
+    identificador = datos["identificador"]
+
+    mensajes.insert_one(datos)
+    
+    return jsonify({"response": f"Mensaje con id {identificador} ha sido creado correctamente"}), 201
+
+    # usuario_existente = usuarios.find_one({"telefono":telefono})
+
+    # if usuario_existente:
+    #     return jsonify({"error": f"Usuario con telefono {telefono} ya existe"}), 404
+    # else:
+    #     usuarios.insert_one(datos)
+    #     return jsonify({"response": f"Usuario con telefono {telefono} y alias {alias} creado correctamente"}), 201
+
+#PUT /mensaje/<id>
+
+@mensajes_bp.route("/<id>", methods=["PUT"])
+def update_usuario(id):
+    data = request.json
+    dataFormateada = {"$set":data}
+    respuesta = mensajes.find_one_and_update({"_id":ObjectId(id)}, dataFormateada, return_document=True)
+    print(respuesta)
+    identificador = respuesta["identificador"]
+
+    if respuesta is None:
+        return jsonify({"error":f"Error al actualizar el mensaje con id {identificador}"}), 404
+    else:
+        return jsonify({"response":f"Mensaje con identificador {identificador} actualizado correctamente"}), 200
+
+#DELETE /mensaje/<id>
+
+@mensajes_bp.route("/<id>", methods=['DELETE'])
+def delete_usuario(id):
+
+    try:
+        mensaje = mensajes.find_one({"_id":ObjectId(id)})
+    except Exception as e:
+        return f"El usuario {id} no existe, por lo tanto no se puede borrar (no encontrado)", 404
+    try:
+        borrado = mensajes.delete_one({"_id":ObjectId(id)})
+    except Exception as e:
+        return f"Error al borrar el mensaje con id {id}", 400
+    if borrado.deleted_count == 0:
+        return f"El mensaje con id {id} no existe, por lo tanto no se puede borrar", 200
+
+    return "El usuario ha sido borrado con exito", 200
 
 
 
